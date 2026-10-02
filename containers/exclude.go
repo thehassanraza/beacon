@@ -1,0 +1,86 @@
+package containers
+
+import (
+	"os"
+	"strings"
+)
+
+var excludedContainerNames []string
+
+func Init() {
+	raw := strings.TrimSpace(os.Getenv("EXCLUDE_CONTAINERS"))
+	if raw == "" {
+		excludedContainerNames = nil
+		return
+	}
+
+	parts := strings.Split(raw, ",")
+	excludedContainerNames = make([]string, 0, len(parts))
+	for _, part := range parts {
+		name := strings.TrimSpace(part)
+		if name == "" {
+			continue
+		}
+		excludedContainerNames = append(excludedContainerNames, name)
+	}
+}
+
+func isSelfContainer(name, image string) bool {
+	name = strings.TrimPrefix(strings.TrimSpace(name), "/")
+	lowerName := strings.ToLower(name)
+	lowerImage := strings.ToLower(image)
+	if name != "" && lowerName == "beacon" {
+		return true
+	}
+	return strings.Contains(lowerImage, "beacon")
+}
+
+func IsExcludedContainer(name, image string) bool {
+	if isSelfContainer(name, image) {
+		return true
+	}
+
+	name = strings.TrimPrefix(strings.TrimSpace(name), "/")
+	for _, excluded := range excludedContainerNames {
+		if excluded == "" {
+			continue
+		}
+		if strings.EqualFold(name, excluded) {
+			return true
+		}
+	}
+	return false
+}
+
+func SanitizeContainerEnv(env []string) []string {
+	sanitized := make([]string, len(env))
+	for i, item := range env {
+		parts := strings.SplitN(item, "=", 2)
+		if len(parts) != 2 {
+			sanitized[i] = item
+			continue
+		}
+		k := strings.ToLower(parts[0])
+		if strings.Contains(k, "pass") ||
+			strings.Contains(k, "secret") ||
+			strings.Contains(k, "key") ||
+			strings.Contains(k, "token") ||
+			strings.Contains(k, "auth") ||
+			strings.Contains(k, "pwd") ||
+			strings.Contains(k, "db_") {
+			sanitized[i] = parts[0] + "=••••••••••••"
+			continue
+		}
+		sanitized[i] = item
+	}
+	return sanitized
+}
+
+func containerNameImageFromInspect(name string, configImage string) (string, string) {
+	return strings.TrimPrefix(strings.TrimSpace(name), "/"), configImage
+}
+
+func InspectContainerExcluded(name, configImage string) bool {
+	containerName, containerImage := containerNameImageFromInspect(name, configImage)
+	return IsExcludedContainer(containerName, containerImage)
+}
