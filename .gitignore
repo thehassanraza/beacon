@@ -1,0 +1,261 @@
+# =============================================================================
+# Beacon — .gitignore
+# =============================================================================
+# Keep the repository source-only: no build artifacts, secrets, local databases,
+# dependency trees, or editor/OS junk. When in doubt, prefer ignoring and add
+# an explicit exception (with a comment) if something must be committed.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Secrets & local environment
+# -----------------------------------------------------------------------------
+# Never commit real credentials. Ship a committed .env.example instead.
+!.env.example
+!.env.*.example
+
+# Frontend env overlays (Vite)
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+!frontend/.env.*.example
+
+# Common secret / credential filenames
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+!**/testdata/**/*.crt
+!**/testdata/**/*.pem
+secrets/
+credentials.json
+service-account*.json
+*.secret
+*.secrets
+kubeconfig
+kubeconfig.*
+!.kubeconfig.example
+
+# -----------------------------------------------------------------------------
+# Go build artifacts & tooling
+# -----------------------------------------------------------------------------
+# Compiled binary (Makefile: go build -o beacon .)
+/beacon
+/docklog
+bin/
+dist/
+build/
+out/
+
+# Cross-platform / archived binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+*.obj
+
+# Test binaries (`go test -c`) and coverage
+*.test
+*.out
+*.prof
+*.pprof
+coverage/
+coverage.txt
+coverage.html
+coverage.out
+profile.cov
+cpu.prof
+mem.prof
+trace.out
+
+# Go workspace (local multi-module experiments)
+go.work
+go.work.sum
+
+# Optional vendor tree — uncomment the next line only if you do NOT vendor
+# vendor/
+
+# Temporary / debug dumps from local runs
+debug
+debug.test
+__debug_bin*
+*.log
+*.log.*
+
+# -----------------------------------------------------------------------------
+# Runtime data & databases
+# -----------------------------------------------------------------------------
+# SQLite (default DB_PATH=app.db; compose mounts ./data)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+# Compose / runtime volume (local SQLite lives here)
+data/
+
+# Local one-off DB files created by Makefile / manual runs
+/app.db
+/beacon.db
+/docklog.db
+
+# Temporary uploads / exports generated at runtime
+tmp/
+temp/
+.tmp/
+*.tmp
+*.bak
+*.old
+*.swp
+*.swo
+*~
+
+# -----------------------------------------------------------------------------
+# Frontend (Vue 3 + Vite + pnpm/npm)
+# -----------------------------------------------------------------------------
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+frontend/.cache/
+frontend/coverage/
+frontend/*.local
+frontend/.eslintcache
+frontend/.stylelintcache
+frontend/playwright-report/
+frontend/test-results/
+frontend/cypress/videos/
+frontend/cypress/screenshots/
+
+# Package manager noise (keep lockfiles committed)
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-store/
+.npm/
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# Root-level JS tooling (if ever added)
+node_modules/
+.turbo/
+.parcel-cache/
+.vercel/
+.netlify/
+
+# -----------------------------------------------------------------------------
+# Docker / Compose local overrides
+# -----------------------------------------------------------------------------
+# Keep Dockerfile, docker-compose.yaml, and .dockerignore tracked.
+docker-compose.override.yml
+docker-compose.override.yaml
+compose.override.yml
+compose.override.yaml
+*.override.yml
+*.override.yaml
+
+# Local image / build caches that should never be committed
+.docker/
+
+# -----------------------------------------------------------------------------
+# IDE, editors & AI assistant local state
+# -----------------------------------------------------------------------------
+!.vscode/extensions.json
+!.vscode/settings.json.example
+!.vscode/launch.json.example
+.idea/
+*.iml
+*.ipr
+*.iws
+*.code-workspace
+
+# Vim / Emacs / Sublime
+*.swp
+*.swo
+*.swn
+.*.sw?
+Session.vim
+.vim/
+.emacs.d/
+auto-save-list/
+*.sublime-project
+*.sublime-workspace
+
+# Cursor / Copilot / local agent scratch (never commit session state)
+.cursor/
+.cursorignore.local
+.claude/
+.codex/
+.agent/
+.agents/
+AGENTS.local.md
+
+# -----------------------------------------------------------------------------
+# Operating system junk
+# -----------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+ehthumbs.db
+ehthumbs_vista.db
+Thumbs.db
+Thumbs.db:encryptable
+Desktop.ini
+$RECYCLE.BIN/
+*.stackdump
+.directory
+.fuse_hidden*
+.nfs*
+.Trash-*
+
+# -----------------------------------------------------------------------------
+# Test / CI / fuzzing local output
+# -----------------------------------------------------------------------------
+.test/
+testdata/generated/
+fuzz/
+**/testdata/**/*.db
+**/testdata/**/*.log
+
+# -----------------------------------------------------------------------------
+# Archives & large local dumps
+# -----------------------------------------------------------------------------
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+*.dmg
+*.iso
+
+# Core dumps
+core
+core.*
+vgcore.*
+
+# -----------------------------------------------------------------------------
+# Optional local-only docs / private notes (keep public docs/ tracked)
+# -----------------------------------------------------------------------------
+*.local.md
+NOTES.local.md
+TODO.local.md
+private/
+.scratch/
+config.bat

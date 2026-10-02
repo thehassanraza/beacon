@@ -1,0 +1,255 @@
+package middleware
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"testing"
+
+	"beacon/config"
+)
+
+func resetClientAccessState() {
+	ClientAccessEnabled = true
+	allowedOrigins = []string{"https://beacon.example.com"}
+	config.TrustProxy = false
+}
+
+func newTestRequest(method, target string, headers map[string]string) *http.Request {
+	req := httptest.NewRequest(method, target, nil)
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	return req
+}
+
+func TestWebClientAllowedSameOrigin(t *testing.T) {
+	resetClientAccessState()
+	req := newTestRequest("GET", "http://beacon.local/api/containers", map[string]string{
+		HeaderBeaconClient: ClientHeaderWeb,
+		"Origin":            "http://beacon.local",
+	})
+	if !isClientAccessAllowed(req) {
+		t.Fatal("expected same-origin web request to be allowed")
+	}
+}
+
+func TestWebClientBlockedWithoutHeader(t *testing.T) {
+	resetClientAccessState()
+	req := newTestRequest("GET", "http://beacon.local/api/containers", map[string]string{
+		"Origin": "http://beacon.local",
+	})
+	if isClientAccessAllowed(req) {
+		t.Fatal("expected request without X-Beacon-Client to be blocked")
+	}
+}
+
+func TestWebClientBlockedForeignOrigin(t *testing.T) {
+	resetClientAccessState()
+	os.Setenv("ENV", "production")
+	defer os.Unsetenv("ENV")
+
+	req := newTestRequest("GET", "http://beacon.local/api/containers", map[string]string{
+		HeaderBeaconClient: ClientHeaderWeb,
+		"Origin":            "https://evil.example.com",
+	})
+	if isClientAccessAllowed(req) {
+		t.Fatal("expected foreign origin to be blocked in production")
+	}
+}
+
+func TestWebClientAllowedListedOrigin(t *testing.T) {
+	resetClientAccessState()
+	os.Setenv("ENV", "production")
+	defer os.Unsetenv("ENV")
+
+	req := newTestRequest("GET", "http://beacon.local/api/containers", map[string]string{
+		HeaderBeaconClient: ClientHeaderWeb,
+		"Origin":            "https://beacon.example.com",
+	})
+	if !isClientAccessAllowed(req) {
+		t.Fatal("expected origin listed in ALLOWED_ORIGINS to be allowed")
+	}
+}
+
+func TestWebClientAllowedHostOnlyOriginEntry(t *testing.T) {
+	resetClientAccessState()
+	allowedOrigins = []string{"beacon.example.com"}
+	os.Setenv("ENV", "production")
+	defer os.Unsetenv("ENV")
+
+	req := newTestRequest("POST", "http://beacon.example.com/api/token", map[string]string{
+		HeaderBeaconClient: ClientHeaderWeb,
+		"Origin":            "https://beacon.example.com",
+	})
+	if !isClientAccessAllowed(req) {
+		t.Fatal("expected host-only ALLOWED_ORIGINS entry to match HTTPS origin")
+	}
+}
+
+func TestWebClientAllowedViaReverseProxyHost(t *testing.T) {
+	resetClientAccessState()
+	config.TrustProxy = true
+	req := newTestRequest("GET", "http://127.0.0.1:8000/api/containers", map[string]string{
+		HeaderBeaconClient: ClientHeaderWeb,
+		"Origin":            "https://beacon.example.com",
+		"X-Forwarded-Host":  "beacon.example.com",
+		"X-Forwarded-Proto": "https",
+	})
+	if !originMatchesAllowed("https://beacon.example.com", req) {
+		t.Fatal("expected reverse-proxy forwarded host to match configured origin")
+	}
+}
+
+func TestWebClientAllowedWhenOriginHostMatchesWithoutTrustProxy(t *testing.T) {
+	resetClientAccessState()
+	os.Setenv("ENV", "production")
+	defer os.Unsetenv("ENV")
+
+	req := newTestRequest("POST", "http://beacon.example.com/api/token", map[string]string{
+		HeaderBeaconClient: ClientHeaderWeb,
+		"Origin":            "https://beacon.example.com",
+	})
+	if !isClientAccessAllowed(req) {
+		t.Fatal("expected HTTPS origin to match when Host header matches without TRUST_PROXY")
+	}
+}
+
+func TestForwardHeadersIgnoredWithoutTrustProxy(t *testing.T) {
+	resetClientAccessState()
+	config.TrustProxy = false
+	req := newTestRequest("GET", "http://127.0.0.1:8000/api/containers", map[string]string{
+		"X-Forwarded-Host":  "beacon.example.com",
+		"X-Forwarded-Proto": "https",
+	})
+	if got := requestHost(req); got != "127.0.0.1:8000" {
+		t.Fatalf("expected requestHost to ignore forwarded host, got %q", got)
+	}
+	if got := requestScheme(req); got != "http" {
+		t.Fatalf("expected requestScheme to ignore forwarded proto, got %q", got)
+	}
+}
+
+func TestSecFetchSiteSameOriginAllowedForConfiguredHost(t *testing.T) {
+	resetClientAccessState()
+	allowedOrigins = []string{"beacon.example.com"}
+	os.Setenv("ENV", "production")
+	defer os.Unsetenv("ENV")
+
+	req := newTestRequest("POST", "http://beacon.example.com/api/token", map[string]string{
+		HeaderBeaconClient: ClientHeaderWeb,
+		"Sec-Fetch-Site":    "same-origin",
+	})
+	if !isClientAccessAllowed(req) {
+		t.Fatal("expected same-origin web request when Host matches ALLOWED_ORIGINS")
+	}
+}
+
+func TestSecFetchSiteWithoutOriginBlockedWhenHostNotAllowed(t *testing.T) {
+	resetClientAccessState()
+	allowedOrigins = []string{"other.example.com"}
+	os.Setenv("ENV", "production")
+	defer os.Unsetenv("ENV")
+
+	req := newTestRequest("GET", "http://beacon.local/api/containers", map[string]string{
+		HeaderBeaconClient: ClientHeaderWeb,
+		"Sec-Fetch-Site":    "same-origin",
+	})
+	if isClientAccessAllowed(req) {
+		t.Fatal("expected same-origin request to be blocked when Host not in ALLOWED_ORIGINS")
+	}
+}
+
+func TestContainerActionEnvGate(t *testing.T) {
+	config.CanStart = false
+	defer func() {
+		config.CanStart = false
+	}()
+
+	if ContainerActionEnvAllowed("start") {
+		t.Fatal("expected start to be denied when ALLOW_START is false")
+	}
+
+	config.CanStart = true
+	if !ContainerActionEnvAllowed("start") {
+		t.Fatal("expected start to be allowed when ALLOW_START is true")
+	}
+}
+
+func TestClampStaffActionPermissions(t *testing.T) {
+	config.CanStart = true
+	config.CanStop = false
+	config.CanRestart = true
+	config.CanDelete = false
+	config.AllowShell = true
+	defer func() {
+		config.CanStart = false
+		config.CanRestart = false
+		config.AllowShell = false
+	}()
+
+	start, stop, restart, del, shell := ClampStaffActionPermissions(true, true, true, true, true)
+	if !start || stop || !restart || del || !shell {
+		t.Fatalf("unexpected clamp result: %v %v %v %v %v", start, stop, restart, del, shell)
+	}
+}
+
+func TestNativeClientAllowedWithoutOrigin(t *testing.T) {
+	resetClientAccessState()
+	req := newTestRequest("POST", "http://192.168.1.10:8888/api/token", nil)
+	if !isClientAccessAllowed(req) {
+		t.Fatal("expected native client without Origin to be allowed")
+	}
+}
+
+func TestBrowserLikeRequestBlockedWithoutWebHeaders(t *testing.T) {
+	resetClientAccessState()
+	req := newTestRequest("GET", "http://beacon.local/api/containers", map[string]string{
+		"Origin":         "https://evil.example.com",
+		"Sec-Fetch-Site": "cross-site",
+	})
+	if isClientAccessAllowed(req) {
+		t.Fatal("expected cross-site browser request without web client header to be blocked")
+	}
+}
+
+func TestWSWebAllowedByOrigin(t *testing.T) {
+	resetClientAccessState()
+	req := newTestRequest("GET", "http://beacon.local/ws/logs/abc", map[string]string{
+		"Origin": "http://beacon.local",
+	})
+	if !IsWSAccessAllowed(req) {
+		t.Fatal("expected browser websocket with same origin to be allowed")
+	}
+}
+
+func TestWSNativeAllowedWithoutOrigin(t *testing.T) {
+	resetClientAccessState()
+	req := newTestRequest("GET", "http://192.168.1.10:8888/ws/logs/abc", nil)
+	if !IsWSAccessAllowed(req) {
+		t.Fatal("expected native websocket without Origin to be allowed")
+	}
+}
+
+func TestClientAccessDisabledAllowsDirectAPI(t *testing.T) {
+	resetClientAccessState()
+	ClientAccessEnabled = false
+	req := newTestRequest("GET", "http://beacon.local/api/containers", nil)
+	if !isClientAccessAllowed(req) {
+		t.Fatal("expected CLIENT_ACCESS=off to allow direct API use")
+	}
+}
+
+func TestLocalhostAllowedOutsideProduction(t *testing.T) {
+	resetClientAccessState()
+	os.Unsetenv("ENV")
+	os.Unsetenv("GO_ENV")
+
+	req := newTestRequest("GET", "http://localhost:8000/api/config", map[string]string{
+		HeaderBeaconClient: ClientHeaderWeb,
+		"Origin":            "http://localhost:5173",
+	})
+	if !isClientAccessAllowed(req) {
+		t.Fatal("expected localhost origin outside production to be allowed for dev")
+	}
+}
